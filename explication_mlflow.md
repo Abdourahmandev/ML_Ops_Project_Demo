@@ -1,205 +1,356 @@
-# Explication MLflow — Examen 3 — MLOps et MLflow Tracking (Partie 2)
+# Explication MLflow — Examen 3 — MLOps et MLflow Tracking
 
-> **Nom :** Abdourahman  
-> **Plateforme :** Databricks Free Edition (Serverless)
+> **Nom :** Abdourahman
+> **Plateforme :** Databricks Free Edition / Serverless
 
 ---
 
 ## Étape 1 — Rôle des imports
 
-| Bibliothèque | Rôle |
-|---|---|
-| `argparse` | Lit les arguments passés en ligne de commande (ex. `--alpha 0.5`). Évite de modifier le code à chaque test. |
-| `logging` | Affiche des messages de suivi (infos, avertissements, erreurs). Plus propre que d'utiliser `print` partout. |
-| `os` | Interagit avec le système de fichiers : créer des dossiers, lire des variables d'environnement, construire des chemins. |
-| `mlflow` | Bibliothèque principale du projet. Enregistre les expériences, paramètres, métriques et modèles pour les comparer. |
-| `pandas` | Charge et manipule les données sous forme de tableau (DataFrame). Utilisé pour lire le CSV et faire le split. |
-| `numpy` | Calcul numérique. Utilisé pour calculer la racine carrée dans la formule RMSE. |
-| `scikit-learn` | Contient les algorithmes ML (ElasticNet, Ridge, Lasso) et les métriques d'évaluation. |
+Dans ce projet, on utilise plusieurs bibliothèques Python. Chacune a un rôle précis dans le notebook.
+
+| Bibliothèque     | Rôle                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `argparse`       | Sert à passer des paramètres au script, comme `--alpha` ou `--l1_ratio`, sans modifier le code à chaque fois.                                                                                                 |
+| `logging`        | Sert à gérer les messages affichés pendant l’exécution. C’est plus propre que de seulement utiliser `print`, même si dans mon notebook j’utilise encore plusieurs `print` pour voir les résultats rapidement. |
+| `os`             | Sert à travailler avec les chemins, les dossiers et les variables d’environnement.                                                                                                                            |
+| `shutil`         | Sert à copier les fichiers, par exemple les fichiers train/test vers un dossier temporaire avant de les logger dans MLflow.                                                                                   |
+| `warnings`       | Sert à cacher certains avertissements pour rendre l’affichage plus lisible.                                                                                                                                   |
+| `mlflow`         | Sert à suivre les expériences, les paramètres, les métriques, les modèles et les artefacts.                                                                                                                   |
+| `mlflow.sklearn` | Sert à sauvegarder un modèle scikit-learn dans MLflow.                                                                                                                                                        |
+| `pandas`         | Sert à lire et manipuler les données sous forme de DataFrame.                                                                                                                                                 |
+| `numpy`          | Sert ici surtout pour le calcul du RMSE avec la racine carrée.                                                                                                                                                |
+| `scikit-learn`   | Sert pour les modèles de régression, le split train/test et les métriques.                                                                                                                                    |
 
 ---
 
 ## Étape 2 — Pourquoi utiliser `logging` ?
 
-On utilise `logging` plutôt que `print` parce que c'est beaucoup plus flexible. Avec `logging`, on peut choisir le niveau de verbosité (`DEBUG`, `INFO`, `WARNING`, `ERROR`) et activer ou désactiver les messages sans toucher au code. Dans ce projet, on utilise le niveau `WARN` pour ne pas surcharger la sortie avec des messages inutiles. C'est une bonne pratique surtout quand on travaille en équipe ou en production, parce que les logs peuvent aussi être redirigés vers des fichiers ou des outils de monitoring.
+On utilise `logging` parce que c’est plus flexible que `print`. Avec `logging`, on peut choisir le niveau de message qu’on veut afficher, par exemple `DEBUG`, `INFO`, `WARNING` ou `ERROR`.
+
+Dans mon projet, le niveau est mis à `WARN`, donc normalement on affiche seulement les messages importants. Par contre, comme c’est un notebook d’exercice, j’utilise aussi des `print` pour voir les résultats plus facilement pendant l’exécution.
+
+Dans un vrai projet MLOps, `logging` serait plus utile parce qu’on pourrait garder les logs dans un fichier ou les envoyer vers un outil de monitoring.
 
 ---
 
-## Étape 3 — Arguments en ligne de commande (`argparse`)
+## Étape 3 — Arguments en ligne de commande avec `argparse`
 
-**1) À quoi sert `--alpha` ?**
+### 1) À quoi sert `--alpha` ?
 
-`alpha` contrôle la force de la régularisation. Plus alpha est grand, plus le modèle est pénalisé et plus les coefficients tendent vers zéro. Un petit alpha donne un modèle plus libre, un grand alpha simplifie davantage le modèle pour éviter le surapprentissage.
+`alpha` sert à contrôler la force de la régularisation.
 
-**2) À quoi sert `--l1_ratio` ?**
+Si `alpha` est grand, le modèle est plus pénalisé. Les coefficients deviennent plus petits et le modèle devient plus simple. Ça peut aider à éviter le surapprentissage.
 
-`l1_ratio` est utilisé uniquement dans ElasticNet. Il détermine le mélange entre la régularisation L1 (Lasso) et L2 (Ridge) :
-- `l1_ratio = 1` → le modèle se comporte comme Lasso (zéros dans les poids)
-- `l1_ratio = 0` → le modèle se comporte comme Ridge (poids petits mais non nuls)
-- Entre 0 et 1 → mélange des deux
+Si `alpha` est petit, le modèle est plus libre. Il peut mieux apprendre les données, mais il peut aussi plus facilement surapprendre.
 
-**3) Pourquoi est-il utile de modifier ces valeurs en ligne de commande dans un contexte MLOps ?**
+### 2) À quoi sert `--l1_ratio` ?
 
-En MLOps, on veut automatiser les entraînements et les comparaisons. Si les hyperparamètres sont codés en dur dans le script, il faut modifier le fichier à chaque test. Avec `argparse`, on peut lancer le script avec différentes valeurs sans toucher au code, ce qui facilite l'intégration dans des pipelines automatiques (ex. GitHub Actions, Databricks Jobs). Ça rend aussi le code plus propre et plus réutilisable.
+`l1_ratio` est utilisé surtout par ElasticNet. Il sert à choisir le mélange entre Lasso et Ridge.
+
+* Si `l1_ratio = 1`, on est proche de Lasso.
+* Si `l1_ratio = 0`, on est proche de Ridge.
+* Si la valeur est entre 0 et 1, c’est un mélange des deux.
+
+Dans mon code, Ridge et Lasso reçoivent aussi `l1_ratio` dans la fonction, mais ils ne l’utilisent pas vraiment. C’est surtout pour garder la même structure dans les fonctions.
+
+### 3) Pourquoi modifier ces valeurs en ligne de commande dans un contexte MLOps ?
+
+En MLOps, on veut souvent tester plusieurs configurations sans changer le code à chaque fois. Avec `argparse`, on peut lancer le même script avec différentes valeurs de `alpha` et `l1_ratio`.
+
+C’est utile si on veut automatiser les entraînements avec un pipeline, par exemple avec Databricks Jobs ou GitHub Actions. Ça rend aussi le script plus réutilisable.
 
 ---
 
-## Étape 4 — Métriques d'évaluation
+## Étape 4 — Métriques d’évaluation
 
-| Métrique | Description | Valeur préférable |
-|---|---|---|
-| **RMSE** (Root Mean Squared Error) | Racine carrée de la moyenne des erreurs au carré. Pénalise fortement les grosses erreurs. | ↓ La plus petite possible (0 = parfait) |
-| **MAE** (Mean Absolute Error) | Moyenne des valeurs absolues des erreurs. Plus robuste aux valeurs aberrantes que le RMSE. | ↓ La plus petite possible |
-| **R²** (Coefficient de détermination) | Proportion de variance de la cible expliquée par le modèle. R²=1 → parfait, R²=0 → pas mieux que la moyenne. | ↑ Le plus grand possible (idéalement proche de 1) |
+| Métrique | Explication                                                                                        | Objectif                  |
+| -------- | -------------------------------------------------------------------------------------------------- | ------------------------- |
+| RMSE     | C’est la racine carrée de la moyenne des erreurs au carré. Elle pénalise plus les grosses erreurs. | Plus petit possible       |
+| MAE      | C’est la moyenne des erreurs absolues. Elle est simple à comprendre.                               | Plus petit possible       |
+| R²       | Indique à quel point le modèle explique la variable cible.                                         | Plus proche de 1 possible |
+
+Un R² de 1 veut dire que le modèle explique parfaitement les données. Un R² de 0 veut dire que le modèle ne fait pas mieux qu’une prédiction simple basée sur la moyenne. Le R² peut même être négatif si le modèle est mauvais.
 
 ---
 
 ## Étape 5 — Tags MLflow
 
-Les tags dans MLflow servent à annoter les runs avec des informations contextuelles qui ne sont pas des hyperparamètres ni des métriques. Par exemple, on peut indiquer la version du projet, le nom de l'équipe, l'environnement d'exécution ou la phase du développement.
+Les tags dans MLflow servent à ajouter des informations sur un run. Ce ne sont pas des paramètres du modèle ni des métriques.
 
-**Exemple d'utilisation en équipe :**
+Dans mon notebook, j’ai utilisé des tags comme :
 
-On a défini les tags `"release.version": "2.0"` et `"release.candidate": "RC1"`. Si plusieurs développeurs tournent des expériences en parallèle, les tags permettent de filtrer rapidement dans MLflow tous les runs d'une version donnée, sans mélanger les résultats de dev avec ceux de staging ou prod. On pourrait aussi ajouter un tag `"auteur": "prenom"` pour savoir qui a lancé quel run.
+* `release.version`
+* `release.candidate`
+* `project`
+* `exam`
+* `engineering`
+
+Ces tags permettent de mieux retrouver les runs dans MLflow. Par exemple, si on a plusieurs versions du projet, on peut filtrer les runs par version ou par projet.
+
+Dans un travail d’équipe, c’est utile pour ne pas mélanger les runs de développement, de test ou de production.
 
 ---
 
 ## Étape 6 — Fonctions de création des modèles
 
-**1) Pourquoi créer une fonction par modèle ?**
+### 1) Pourquoi créer une fonction par modèle ?
 
-Ça permet de séparer la logique propre à chaque modèle. Si demain je veux changer les paramètres de Ridge sans toucher à ElasticNet, je modifie juste la fonction `make_ridge`. C'est plus lisible et plus facile à maintenir. Ça suit le principe de responsabilité unique.
+J’ai créé une fonction pour chaque modèle pour rendre le code plus clair.
 
-**2) Pourquoi ElasticNet utilise `alpha` et `l1_ratio` ?**
+Par exemple :
 
-ElasticNet combine la pénalité L1 (Lasso) et L2 (Ridge). Il a donc besoin de deux paramètres :
-- `alpha` pour contrôler l'intensité globale de la régularisation
-- `l1_ratio` pour doser le mélange entre L1 et L2
+* `make_elasticnet`
+* `make_ridge`
+* `make_lasso`
 
-Sans `l1_ratio`, on ne pourrait pas distinguer ElasticNet de Ridge ou Lasso.
+Chaque fonction crée son modèle et retourne aussi les paramètres qu’on veut enregistrer dans MLflow.
 
-**3) Pourquoi Ridge et Lasso enregistrent surtout `alpha` ?**
+Ça rend le code plus facile à lire. Si je veux modifier Ridge, je peux aller directement dans la fonction Ridge sans toucher aux autres modèles.
 
-Ridge n'utilise que la régularisation L2, donc le seul paramètre à contrôler est `alpha`. Idem pour Lasso qui n'utilise que L1. Il n'y a pas de "ratio" à ajuster puisqu'il n'y a qu'un seul type de pénalité. Enregistrer `l1_ratio` pour ces modèles n'aurait pas de sens.
+### 2) Pourquoi ElasticNet utilise `alpha` et `l1_ratio` ?
+
+ElasticNet combine deux types de régularisation :
+
+* L1, comme Lasso ;
+* L2, comme Ridge.
+
+Donc il a besoin de deux paramètres.
+
+`alpha` contrôle la force générale de la régularisation.
+`l1_ratio` contrôle le mélange entre L1 et L2.
+
+### 3) Pourquoi Ridge et Lasso enregistrent surtout `alpha` ?
+
+Ridge utilise seulement la régularisation L2. Lasso utilise seulement la régularisation L1.
+
+Donc, pour ces deux modèles, le paramètre important est surtout `alpha`. Ils n’ont pas besoin de `l1_ratio`.
+
+C’est pour ça que dans MLflow, on enregistre seulement les paramètres vraiment utilisés par le modèle.
 
 ---
 
 ## Étape 7 — Rôle de chaque appel MLflow dans `train_one_run`
 
-| Appel MLflow | Rôle |
-|---|---|
-| `mlflow.start_run(run_name=...)` | Démarre un nouveau run avec un nom lisible. Tout ce qui est loggé après est associé à ce run. |
-| `mlflow.set_tags(COMMON_TAGS)` | Applique les métadonnées communes (version, projet, équipe). Apparaissent dans l'interface MLflow pour filtrer. |
-| `mlflow.log_params(params)` | Enregistre les hyperparamètres (ex. `alpha`, `l1_ratio`). On sait exactement avec quoi le modèle a été entraîné. |
-| `mlflow.log_metrics({...})` | Enregistre les métriques de performance (RMSE, MAE, R²) calculées sur le jeu de test. Sert à comparer les runs. |
-| `mlflow.sklearn.log_model(estimator, "model")` | Sérialise et sauvegarde le modèle dans MLflow. On peut le recharger directement pour faire des prédictions. |
-| `mlflow.log_artifacts("data/")` | Sauvegarde des fichiers (CSV train/test) comme artefacts du run. Garantit la traçabilité des données. |
-| `mlflow.end_run()` | Ferme le run proprement. Sans cet appel, le run resterait "actif" et les prochains logs pourraient s'y ajouter par erreur. |
+| Appel MLflow                     | Rôle                                                                  |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `mlflow.start_run(run_name=...)` | Démarre un nouveau run MLflow.                                        |
+| `mlflow.set_tags(COMMON_TAGS)`   | Ajoute les tags communs au run.                                       |
+| `mlflow.log_params(params)`      | Enregistre les paramètres du modèle.                                  |
+| `mlflow.log_metrics(...)`        | Enregistre les métriques comme RMSE, MAE et R².                       |
+| `mlflow.sklearn.log_model(...)`  | Sauvegarde le modèle entraîné dans MLflow.                            |
+| `mlflow.log_artifacts(...)`      | Sauvegarde des fichiers liés au run, comme `train.csv` et `test.csv`. |
+| `mlflow.end_run()`               | Termine le run proprement.                                            |
+
+Dans mon cas, les fichiers `train.csv` et `test.csv` sont sauvegardés dans le Volume UC. Ensuite, ils sont copiés dans un dossier temporaire et ajoutés comme artefacts dans MLflow.
+
+Ça permet de garder une trace des données utilisées pour chaque run.
 
 ---
 
-## Étape 9 — Pourquoi plusieurs runs avec différentes valeurs ?
+## Étape 9 — Pourquoi lancer plusieurs runs avec différentes valeurs ?
 
-On lance plusieurs runs avec différentes valeurs d'`alpha` et de `l1_ratio` pour trouver la combinaison d'hyperparamètres qui donne les meilleures performances. Sans cette comparaison, on choisit les paramètres au hasard et on ne sait pas si le modèle aurait pu faire mieux.
+On lance plusieurs runs pour comparer les modèles avec différents paramètres.
 
-En MLOps, cette pratique s'appelle le **hyperparameter tuning**. MLflow est très utile dans ce cas parce qu'il enregistre tout automatiquement et permet de comparer visuellement tous les runs dans une même expérience. C'est beaucoup plus rapide que de noter les résultats à la main dans un tableau Excel.
+Dans mon projet, je compare trois modèles :
+
+* ElasticNet ;
+* Ridge ;
+* Lasso.
+
+Je les teste aussi avec différentes valeurs de `alpha` et `l1_ratio`.
+
+L’objectif est de voir quel modèle donne les meilleurs résultats. Sans MLflow, il faudrait noter les résultats manuellement, ce qui devient vite difficile.
+
+Avec MLflow, chaque run garde les paramètres, les métriques, les artefacts et le modèle. C’est donc plus simple de comparer.
 
 ---
 
 ## Étape 12 — Tableau des résultats
 
-> Les valeurs ci-dessous proviennent des captures MLflow.  
-> Le run1.1 de Ridge (alpha=0.7) est confirmé par la capture `experiments_run.jpeg`.  
-> Les autres valeurs ont été lues dans l'interface MLflow lors de l'exécution.
+Les résultats suivants viennent des runs affichés dans MLflow.
 
-| Expérience | Run | Modèle | Alpha | L1 ratio | RMSE | MAE | R² |
-|---|---|---|---|---|---|---|---|
-| exp_multi_EL | run1.1 | ElasticNet | 0.7 | 0.7 | 0.6740 | 0.5244 | 0.2735 |
-| exp_multi_EL | run4.1 | ElasticNet | 0.1 | 0.2 | 0.6095 | 0.4820 | 0.3980 |
-| exp_multi_Ridge | run1.1 | Ridge | 0.7 | N/A | 0.6247 | 0.5013 | 0.3691 |
-| exp_multi_Ridge | run4.1 | Ridge | 0.1 | N/A | 0.5990 | 0.4715 | **0.4120** |
-| exp_multi_Lasso | run1.1 | Lasso | 0.7 | N/A | 0.7183 | 0.5618 | 0.1672 |
-| exp_multi_Lasso | run4.1 | Lasso | 0.1 | N/A | 0.6398 | 0.5021 | 0.3540 |
+| Expérience      | Run    | Modèle     | Alpha | L1 ratio | RMSE   | MAE    | R²     |
+| --------------- | ------ | ---------- | ----- | -------- | ------ | ------ | ------ |
+| exp_multi_EL    | run1.1 | ElasticNet | 0.7   | 0.7      | 0.6740 | 0.5244 | 0.2735 |
+| exp_multi_EL    | run4.1 | ElasticNet | 0.1   | 0.2      | 0.6095 | 0.4820 | 0.3980 |
+| exp_multi_Ridge | run1.1 | Ridge      | 0.7   | N/A      | 0.6247 | 0.5013 | 0.3691 |
+| exp_multi_Ridge | run4.1 | Ridge      | 0.1   | N/A      | 0.5990 | 0.4715 | 0.4120 |
+| exp_multi_Lasso | run1.1 | Lasso      | 0.7   | N/A      | 0.7183 | 0.5618 | 0.1672 |
+| exp_multi_Lasso | run4.1 | Lasso      | 0.1   | N/A      | 0.6398 | 0.5021 | 0.3540 |
 
 ---
 
-## Étape 13 — Questions d'analyse des résultats
+## Étape 13 — Questions d’analyse des résultats
 
-**1) Quel modèle donne le plus petit RMSE ?**
+### 1) Quel modèle donne le plus petit RMSE ?
 
-Ridge avec `alpha=0.1` (run4.1) donne le plus petit RMSE (~0.5990). En général, Ridge performe mieux que Lasso sur ce dataset parce qu'il garde tous les coefficients au lieu d'en forcer certains à zéro. Avec un alpha faible, la régularisation est plus douce et le modèle colle mieux aux données.
+Le modèle qui donne le plus petit RMSE est Ridge avec `alpha=0.1`.
 
-**2) Quel modèle donne le meilleur R² ?**
+Son RMSE est environ `0.5990`, ce qui est le meilleur résultat dans le tableau.
 
-Ridge (run4.1, alpha=0.1) donne aussi le meilleur R² (~0.41). Ça confirme que Ridge avec peu de régularisation est le plus adapté à ce problème. L'ElasticNet avec alpha faible s'en approche aussi.
+### 2) Quel modèle donne le meilleur R² ?
 
-**3) Est-ce que tous les modèles donnent exactement les mêmes résultats ?**
+Le meilleur R² est aussi obtenu par Ridge avec `alpha=0.1`.
 
-Non, les résultats sont différents selon le modèle et les hyperparamètres. Lasso donne les pires résultats avec un alpha élevé car il force beaucoup de coefficients à zéro, ce qui perd de l'information sur des features qui sont peut-être toutes utiles dans ce dataset. Ridge garde tous les coefficients petits mais non nuls, ce qui lui permet de mieux capturer les relations entre les features et la qualité du vin.
+Le R² est environ `0.4120`. Ce n’est pas un score parfait, mais c’est le meilleur parmi les runs que j’ai comparés.
 
-**4) Quel paramètre semble influencer les résultats ?**
+### 3) Est-ce que tous les modèles donnent exactement les mêmes résultats ?
 
-`alpha` a clairement le plus gros impact. Quand alpha est grand (0.7 ou 0.9), les performances se dégradent pour tous les modèles. Quand alpha est petit (0.1), tous les modèles s'améliorent. `l1_ratio` influence surtout ElasticNet, mais son effet est moins prononcé que celui d'alpha sur les résultats finaux.
+Non, les modèles ne donnent pas les mêmes résultats.
 
-**5) Pourquoi MLflow aide à comparer les modèles ?**
+Les résultats changent selon le modèle et selon la valeur de `alpha`. Par exemple, Lasso avec un alpha élevé donne de moins bons résultats.
 
-Sans MLflow, je devrais noter les résultats à la main dans un tableau, et je risquerais d'oublier avec quels paramètres chaque modèle a été entraîné. MLflow enregistre tout automatiquement : les paramètres, les métriques, les artefacts et les modèles. Dans l'interface, on peut filtrer, trier et visualiser les runs en un coup d'œil. Ça fait gagner beaucoup de temps et rend les comparaisons fiables et reproductibles.
+Je pense que c’est parce que Lasso peut mettre certains coefficients à zéro. Si plusieurs variables sont utiles pour prédire la qualité du vin, Lasso peut perdre de l’information.
 
-**6) Quel modèle choisiriez-vous pour continuer le projet ? Pourquoi ?**
+Ridge fonctionne mieux ici parce qu’il garde toutes les variables, mais réduit quand même l’impact des coefficients.
 
-Je choisirais **Ridge avec alpha=0.1** parce qu'il donne le meilleur RMSE et le meilleur R² parmi tous les runs. C'est aussi un modèle simple et interprétable, ce qui est un avantage si on veut expliquer les résultats. Lasso ne convient pas bien ici car il élimine trop d'informations avec une forte régularisation. ElasticNet pourrait être intéressant si on faisait une recherche plus fine sur alpha et l1_ratio.
+### 4) Quel paramètre semble influencer les résultats ?
+
+Le paramètre qui semble influencer le plus les résultats est `alpha`.
+
+Quand `alpha` est plus petit, les résultats sont meilleurs dans mes runs. Par exemple, les modèles avec `alpha=0.1` performent mieux que ceux avec `alpha=0.7`.
+
+Pour ElasticNet, `l1_ratio` a aussi un effet, mais dans mes résultats, l’impact de `alpha` semble plus important.
+
+### 5) Pourquoi MLflow aide à comparer les modèles ?
+
+MLflow aide parce qu’il garde toutes les informations des expériences au même endroit.
+
+On peut voir :
+
+* les paramètres utilisés ;
+* les métriques obtenues ;
+* les modèles entraînés ;
+* les fichiers sauvegardés comme artefacts.
+
+Ça évite de devoir tout noter à la main. On peut aussi trier les runs par RMSE ou par R² pour trouver rapidement le meilleur modèle.
+
+### 6) Quel modèle choisiriez-vous pour continuer le projet ?
+
+Je choisirais Ridge avec `alpha=0.1`.
+
+C’est le modèle qui donne le meilleur RMSE et le meilleur R² dans mes résultats. Il est aussi simple à comprendre et à expliquer.
+
+Par contre, je ne dirais pas que c’est le modèle final directement. Avant de le déployer, il faudrait tester plus de valeurs de `alpha`, faire une validation croisée et vérifier si le modèle reste stable avec d’autres données.
 
 ---
 
 ## Étape 14 — Questions de compréhension
 
-**1) À quoi sert `if __name__ == "__main__"` ?**
+### 1) À quoi sert `if __name__ == "__main__"` ?
 
-Cette condition permet de s'assurer que le bloc de code principal ne s'exécute que si le fichier est lancé directement (ex. `python train_mlflow.py`). Si le fichier est importé comme module dans un autre script, ce bloc ne s'exécute pas. C'est une bonne pratique en Python pour rendre les fichiers à la fois utilisables comme script ET comme module importable.
+Cette condition sert à exécuter une partie du code seulement quand le fichier est lancé directement.
 
-**2) À quoi sert `warnings.filterwarnings("ignore")` ?**
+Par exemple, si on lance le script avec :
 
-scikit-learn et d'autres bibliothèques peuvent afficher des avertissements pendant l'entraînement (par exemple si Lasso ne converge pas parfaitement avec certains paramètres). Ces messages peuvent encombrer la sortie. `filterwarnings("ignore")` les masque pour que la sortie reste lisible. En production, on voudrait plutôt les capturer avec `logging` que les ignorer.
+```python
+python train_mlflow.py
+```
 
-**3) À quoi sert `np.random.seed(40)` ?**
+le bloc principal va s’exécuter.
 
-Cela fixe la graine du générateur aléatoire de numpy. Sans cette ligne, chaque exécution du script pourrait donner des résultats légèrement différents à cause de l'aléatoire dans certains algorithmes. Avec une graine fixe, les résultats sont reproductibles : en relançant exactement le même script, on obtient exactement les mêmes métriques.
+Mais si le fichier est importé dans un autre fichier Python, ce bloc ne s’exécute pas automatiquement. C’est utile pour rendre le code plus réutilisable.
 
-**4) Quelle est la différence entre un paramètre et une métrique ?**
+### 2) À quoi sert `warnings.filterwarnings("ignore")` ?
 
-Un **paramètre** est une valeur qu'on choisit **avant** l'entraînement et qui configure le modèle (ex. `alpha=0.7`). Une **métrique** est une valeur qu'on calcule **après** l'entraînement pour mesurer la performance du modèle (ex. `RMSE=0.6247`). Les paramètres sont des entrées, les métriques sont des sorties.
+Cette ligne sert à cacher les avertissements.
 
-**5) Quelle est la différence entre `mlflow.log_params()` et `mlflow.log_metrics()` ?**
+Dans un notebook d’exercice, ça permet de garder l’affichage plus propre. Par contre, dans un vrai projet, il faut faire attention, parce que certains warnings peuvent être importants.
 
-`log_params()` enregistre les hyperparamètres (valeurs fixes choisies avant l'entraînement). `log_metrics()` enregistre les performances calculées après l'entraînement. Dans l'interface MLflow, les deux apparaissent dans des sections séparées. On peut filtrer et trier les runs selon les métriques (ex. trier par RMSE croissant).
+Par exemple, un warning peut indiquer qu’un modèle n’a pas bien convergé.
 
-**6) Quelle est la différence entre `mlflow.sklearn.log_model()` et `mlflow.log_artifacts()` ?**
+### 3) À quoi sert `np.random.seed(40)` ?
 
-`log_model()` est spécifique aux modèles scikit-learn : il sauvegarde le modèle avec sa signature MLflow, ce qui permet de le recharger directement pour faire des prédictions via `mlflow.pyfunc.load_model()`. `log_artifacts()` sauvegarde n'importe quel fichier (CSV, images, logs) comme pièce jointe du run. Ce n'est pas un modèle déployable, juste un fichier de référence.
+`np.random.seed(40)` sert à fixer l’aléatoire de NumPy. Cela aide à avoir des résultats reproductibles.
 
-**7) Pourquoi faut-il séparer les données en train et test ?**
+Dans mon code, la reproductibilité vient aussi du `random_state=42`, qui est utilisé dans le split train/test et dans les modèles.
 
-On sépare les données pour évaluer honnêtement la capacité du modèle à généraliser sur des données qu'il n'a jamais vues. Si on évaluait le modèle sur les mêmes données qu'il a apprises, il aurait un score artificiellement bon (surapprentissage). Le jeu de test simule des données réelles en production.
+Donc `np.random.seed(40)` est utile, mais dans ce notebook, le `random_state` joue aussi un rôle très important.
 
-**8) Pourquoi la colonne `quality` ne doit pas être présente dans `train_x` ?**
+### 4) Quelle est la différence entre un paramètre et une métrique ?
 
-`quality` est la colonne cible qu'on cherche à prédire. Si on l'incluait dans les features, le modèle "tricherait" en apprenant directement la réponse. Ça donnerait un R² de 1 en entraînement mais le modèle serait complètement inutilisable en production où on ne connaît pas la qualité à l'avance.
+Un paramètre est une valeur qu’on choisit avant l’entraînement.
 
-**9) Pourquoi sauvegarde-t-on `train.csv` et `test.csv` ?**
+Exemple : `alpha=0.7`.
 
-Pour garantir la reproductibilité des expériences. Si on relance le script plus tard avec un nouveau split, les résultats changeraient. En sauvegardant les splits utilisés et en les loggant comme artefacts MLflow, on peut toujours retrouver exactement quelles données ont servi à entraîner chaque modèle.
+Une métrique est une valeur calculée après l’entraînement pour évaluer le modèle.
 
-**10) Pourquoi MLflow est utile dans un projet MLOps réel ?**
+Exemple : `RMSE=0.6247`.
 
-En MLOps, les équipes font tourner des dizaines ou des centaines d'expériences. Sans outil de tracking, on perd rapidement la trace de ce qui a été testé. MLflow centralise tout : les paramètres, les métriques, les modèles et les artefacts. Ça facilite la collaboration en équipe, la comparaison des modèles et la promotion d'un modèle vers la production via le Model Registry.
+Donc les paramètres sont des entrées, et les métriques sont des résultats.
 
-**11) Pourquoi un bon score sur le jeu de test ne suffit pas toujours pour déployer un modèle en production ?**
+### 5) Quelle est la différence entre `mlflow.log_params()` et `mlflow.log_metrics()` ?
 
-Un bon RMSE sur le test ne garantit pas que le modèle fonctionnera bien en production. Les données réelles peuvent avoir une distribution différente du jeu de test (concept drift). Le modèle pourrait aussi être lent, trop lourd, ou non-robuste aux valeurs manquantes. Il faut aussi valider que le modèle respecte des contraintes métier (ex. ne pas prédire une qualité négative) et tester son comportement sous charge avant de le déployer.
+`mlflow.log_params()` sert à enregistrer les paramètres du modèle, comme `alpha`.
 
-**12) Que faudrait-il ajouter pour rendre ce projet plus professionnel ?**
+`mlflow.log_metrics()` sert à enregistrer les résultats du modèle, comme RMSE, MAE et R².
 
-- **Docker** : pour packager l'environnement d'exécution et garantir que le script tourne de la même façon partout (dev, staging, prod).
-- **GitHub Actions** : pour automatiser les tests et le réentraînement du modèle à chaque push sur la branche principale.
+Dans MLflow, les deux sont séparés, ce qui rend les runs plus faciles à comparer.
 
-Ces deux éléments permettraient d'avoir un vrai pipeline CI/CD pour le ML, ce qui est la base d'un projet MLOps mature.
+### 6) Quelle est la différence entre `mlflow.sklearn.log_model()` et `mlflow.log_artifacts()` ?
+
+`mlflow.sklearn.log_model()` sert à sauvegarder le modèle entraîné.
+
+`mlflow.log_artifacts()` sert à sauvegarder des fichiers liés au run, comme des CSV ou d’autres fichiers de sortie.
+
+Dans mon projet, le modèle est sauvegardé avec `log_model`, alors que les fichiers `train.csv` et `test.csv` sont sauvegardés avec `log_artifacts`.
+
+### 7) Pourquoi faut-il séparer les données en train et test ?
+
+Il faut séparer les données pour évaluer le modèle sur des données qu’il n’a pas vues pendant l’entraînement.
+
+Si on teste le modèle sur les mêmes données que celles utilisées pour l’entraînement, le résultat peut être trop optimiste.
+
+Le jeu de test permet donc de mieux vérifier si le modèle généralise.
+
+### 8) Pourquoi la colonne `quality` ne doit pas être présente dans `train_x` ?
+
+La colonne `quality` est la variable qu’on veut prédire. Elle doit donc être séparée des variables explicatives.
+
+Si on laisse `quality` dans `train_x`, le modèle aurait directement accès à la réponse. Ce serait une fuite de données.
+
+Les résultats seraient donc faux, parce que le modèle apprendrait avec la réponse déjà présente.
+
+### 9) Pourquoi sauvegarde-t-on `train.csv` et `test.csv` ?
+
+On sauvegarde `train.csv` et `test.csv` pour garder une trace exacte des données utilisées.
+
+C’est important pour la reproductibilité. Si plus tard on veut comprendre ou refaire une expérience, on peut retrouver les mêmes données.
+
+Dans un projet MLOps, garder les données liées aux runs est important pour la traçabilité.
+
+### 10) Pourquoi MLflow est utile dans un projet MLOps réel ?
+
+MLflow est utile parce qu’il permet de suivre les expériences de façon organisée.
+
+Dans un vrai projet, on peut avoir plusieurs modèles, plusieurs paramètres et beaucoup de résultats. Sans outil de tracking, on peut vite perdre le fil.
+
+MLflow centralise les paramètres, les métriques, les modèles et les artefacts. Ça facilite aussi le travail en équipe.
+
+### 11) Pourquoi un bon score sur le jeu de test ne suffit pas toujours pour déployer un modèle en production ?
+
+Un bon score sur le jeu de test est important, mais ça ne suffit pas toujours.
+
+En production, les données peuvent être différentes des données d’entraînement. Il peut aussi y avoir des valeurs manquantes, des nouvelles situations ou des changements dans le temps.
+
+Il faut aussi vérifier d’autres points, comme la stabilité du modèle, le temps de réponse, la robustesse et les contraintes métier.
+
+Donc avant de déployer, il faut faire plus de validations.
+
+### 12) Que faudrait-il ajouter pour rendre ce projet plus professionnel ?
+
+Pour rendre le projet plus professionnel, j’ajouterais Docker. Docker permettrait d’avoir le même environnement partout, peu importe la machine utilisée.
+
+J’ajouterais aussi GitHub Actions pour automatiser certaines étapes, comme les tests ou l’exécution du script.
+
+On pourrait aussi ajouter :
+
+* un fichier `requirements.txt` ;
+* des tests unitaires ;
+* une meilleure documentation ;
+* une validation croisée ;
+* une meilleure gestion des logs ;
+* un pipeline CI/CD plus complet.
+
+Avec ces éléments, le projet serait plus proche d’un vrai projet MLOps utilisé en entreprise.
