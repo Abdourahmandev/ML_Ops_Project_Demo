@@ -1,59 +1,65 @@
-# Projet MLOps — Suivi d'expériences avec MLflow
+# Projet MLOps - Suivi d'experiences avec MLflow
 
-Comparaison de trois modèles de régression (**ElasticNet**, **Ridge**, **Lasso**) pour
-prédire la qualité du vin rouge à partir de variables physico-chimiques, avec suivi complet
-des expériences dans **MLflow**. Réalisé sur **Databricks Free Edition** (compute serverless).
+Ce projet compare trois modeles de regression (ElasticNet, Ridge, Lasso) pour predire la qualite du vin rouge a partir de variables physico-chimiques, avec suivi complet dans MLflow.
 
-> Examen 3 — MLOps et MLflow Tracking, partie 2 (laboratoire évalué).
+Contexte: Examen MLOps / MLflow Tracking (Databricks Free Edition, compute serverless).
 
-## Aperçu
+## Objectif
 
-- **Dataset** : `red-wine-quality.csv` — cible : `quality`
-- **Modèles** : ElasticNet, Ridge, Lasso (scikit-learn)
-- **Suivi** : MLflow (paramètres, métriques, modèle, artefacts, tags)
-- **Résultat** : 3 expériences × 4 runs = **12 runs MLflow**
+- Entrainer 3 familles de modeles sur le dataset wine quality
+- Logger chaque run dans MLflow (params, metrics, modele, artefacts, tags)
+- Comparer les performances (RMSE, MAE, R2)
 
-## Structure du dépôt
+Resultat attendu: 3 experiences x 4 configurations = 12 runs MLflow.
+
+## Structure du depot
 
 ```
-mlops-exam-mlflow/
-├── train_mlflow.py          # Script d'entraînement + logging MLflow (notebook Databricks)
-├── explication_mlflow.txt   # Réponses aux questions et analyse des résultats
-├── README.md
-└── .gitignore
+ML_Ops_Project_Demo/
+|- train_mlflow.py
+|- explication_mlflow.txt
+|- Readme.md
+|- data/
+|  \- readme.md
+\- captures_mlflow/
+   |- capture_experiments.PNG
+   |- experiments_run.jpeg
+   |- exp_multi_EL.PNG
+   |- exp_multi_Ridge.PNG
+   \- exp_multi_Lasso.PNG
 ```
 
-Les données (`data/`), les runs et les modèles MLflow ne sont **pas** versionnés :
-la source vit dans un Volume Unity Catalog et les artefacts sont gérés par Databricks.
+## Execution sur Databricks
 
-## Exécution (Databricks Free Edition)
+1. Deposer red-wine-quality.csv dans un Volume Unity Catalog.
+   Exemple: /Volumes/workspace/default/ml_ops_data/red-wine-quality.csv
+2. Ouvrir train_mlflow.py dans Databricks comme notebook Python.
+3. Verifier la variable SOURCE_CSV dans le script.
+4. Lancer le notebook.
+5. Ouvrir AI/ML -> Experiments pour visualiser les runs.
 
-1. Déposer `red-wine-quality.csv` dans un Volume Unity Catalog
-   (ex. `/Volumes/workspace/default/mlops_data/`).
-2. Ouvrir `train_mlflow.py` comme **notebook**, compute = **Serverless**.
-3. Adapter la variable `SOURCE_CSV` au chemin exact du Volume.
-4. Lancer la cellule → **3 expériences × 4 runs = 12 runs**.
-5. Consulter les runs dans le menu latéral **AI/ML → Experiments**.
+Le script:
+- cree les experiences MLflow par utilisateur (/Users/<email>/exp_multi_*)
+- effectue un split train/test
+- sauvegarde train.csv et test.csv dans le Volume Unity Catalog
+- logge ces CSV en artefacts MLflow pour chaque run
 
-### Hyperparamètres
+## Hyperparametres
 
-Réglables via `--alpha` et `--l1_ratio` (valeurs `default` dans `argparse`), ou en modifiant
-la liste `RUN_CONFIGS` dans le script.
+- Arguments disponibles: --alpha, --l1_ratio
+- Configurations definies dans RUN_CONFIGS (4 runs par modele)
 
-## Résultats
+## Fichiers de resultats
 
-Le tableau comparatif (RMSE, MAE, R² par modèle et par run) ainsi que l'analyse
-figurent dans `explication_mlflow.txt`.
+- Analyse et interpretation: explication_mlflow.txt
+- Captures d'ecran MLflow: dossier captures_mlflow/
 
-## Pile technique
+## Stack technique
 
-Python · scikit-learn · pandas · numpy · MLflow · Databricks Free Edition
+Python, pandas, numpy, scikit-learn, MLflow, Databricks Free Edition.
 
-## Notes d'adaptation à Databricks
+## Notes importantes
 
-Le script diffère légèrement d'un MLflow local :
-
-- MLflow est **intégré** — pas de `set_tracking_uri` (l'URI vaut `databricks`).
-- Noms d'expériences en **chemin absolu** : `/Users/<courriel>/exp_multi_*`.
-- Arguments lus via `parse_known_args()` (compatible notebook).
-- Dossier de travail `/tmp` inscriptible pour les fichiers générés.
+- Pas de set_tracking_uri necessaire dans Databricks serverless.
+- parse_known_args est utilise pour compatibilite notebook.
+- Le chemin du Volume dans ce projet est ml_ops_data (avec underscore).
